@@ -1,0 +1,13 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.gitattributes
+Cleaning_Data.Rmd
+Clinical_Analysis.Rmd
+Final_Project_BMEG371_Group6.Rproj
+Mutation_Analysis.Rmd
+RNAseq_Analysis.Rmd
+RNAseq_BRCA.csv
+data_clinical_patient.txt
+data_mutations.txt
