@@ -20,15 +20,22 @@ colnames(data.RNAseq) <- sapply(colnames(data.RNAseq), function(name) {
   
   paste(segments, collapse = "-")
 })
-
 colnames(data.RNAseq)[1] <- "Transcript_ID"
-
 ```
 
 ```{r}
 unique.clinical <- as.data.frame(unique(clinical.patients$PATIENT_ID))
 unique.mutations <- as.data.frame(unique(data.mutations$Tumor_Sample_Barcode))
 unique.RNA <- as.data.frame(colnames(data.RNAseq[,2:1232]))
+
+mutation.patients <- as.data.frame(data.mutations$Tumor_Sample_Barcode)
+colnames(mutation.patients) <- "Patient_ID"
+mutation.patients$Patient_ID <- substr(mutation.patients$Patient_ID, 1, 12)
+
+data.mutations <- cbind(mutation.patients, data.mutations)
+
+colnames(data.mutations)
+
 
 colnames(unique.clinical) <- "Patient_ID"
 colnames(unique.mutations) <- "Patient_ID"
@@ -40,4 +47,8 @@ unique.mutations$Patient_ID <- substr(unique.mutations$Patient_ID, 1, 12)
 common_patient_ids <- Reduce(intersect, list(unique.clinical$Patient_ID, unique.mutations$Patient_ID, unique.RNA$Patient_ID))
 
 filtered.clinical <- clinical.patients[clinical.patients$PATIENT_ID %in% common_patient_ids, ]
+filtered.mutations <- data.mutations[data.mutations$Patient_ID %in% common_patient_ids, ]
+filtered.RNA <- data.RNAseq[, names(data.RNAseq)%in% common_patient_ids]
+filtered.RNA <- cbind(data.RNAseq[,1], filtered.RNA)
+colnames(filtered.RNA)[1] <- "Transcript_ID"
 ```
