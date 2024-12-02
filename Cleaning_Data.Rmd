@@ -51,4 +51,5 @@ filtered.mutations <- data.mutations[data.mutations$Patient_ID %in% common_patie
 filtered.RNA <- data.RNAseq[, names(data.RNAseq)%in% common_patient_ids]
 filtered.RNA <- cbind(data.RNAseq[,1], filtered.RNA)
 colnames(filtered.RNA)[1] <- "Transcript_ID"
+
 ```
