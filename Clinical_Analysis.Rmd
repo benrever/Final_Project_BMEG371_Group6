@@ -4,7 +4,6 @@ output: pdf_document
 
 ```{r, message=FALSE, warning=FALSE}
 data <- read.table("data_clinical_patient.txt", sep = "\t", header = TRUE)
-data.2 <- read.table("brca_tcga_pan_can_atlas_2018_clinical_data.tsv", sep = "\t", header = TRUE)
 
 library(dplyr)
 
@@ -128,6 +127,7 @@ clin_df = data[,
                       "OS_STATUS",
                       "OS_MONTHS",
                       "DAYS_LAST_FOLLOWUP",
+                      "AGE",
                       "SEX",
                       "AJCC_PATHOLOGIC_TUMOR_STAGE", 
                       "SUBTYPE", 
@@ -141,7 +141,9 @@ clin_df = data[,
                       "NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT")]
 
 clin_df$deceased = clin_df$OS_STATUS == "1:DECEASED"
+```
 
+```{r}
 clin_df[which(clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE == "N/A"), "AJCC_PATHOLOGIC_TUMOR_STAGE"] = NA
 clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE = gsub("[ABC]$", "", clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE)
 
@@ -149,7 +151,7 @@ clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE = gsub("[ABC]$", "", clin_df$AJCC_PATHOLOGIC
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE
 fit = survfit(Surv(OS_MONTHS, deceased) ~ AJCC_PATHOLOGIC_TUMOR_STAGE, data=clin_df)
 
-ggsurvplot(fit, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("Stage: I", "Stage: II", "Stage: III", "Stage: IV", "Stage: X"))
+ggsurvplot(fit, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("Stage: I", "Stage: II", "Stage: III", "Stage: IV", "Stage: X"), title = "Survival Anlaysis of Cancer Stage", xlab = "Time (Months)")
 ```
 
 ```{r}
@@ -159,7 +161,20 @@ clin_df[which(clin_df$RACE == "Native"), "RACE"] = NA
 
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$RACE
 fit_race = survfit(Surv(OS_MONTHS, deceased) ~ RACE, data=clin_df)
-ggsurvplot(fit_race, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35)
+ggsurvplot(fit_race, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,title = "Survival Analysis of Race", xlab = "Time (Months)")
+```
+
+```{r}
+# Cancer status
+table(data$AGE)
+clin_df$age_group <- cut(clin_df$AGE,
+                         breaks = c(20, 40, 60, 80, Inf),  # Define breakpoints
+                         labels = c("20-40", "40-60", "60-80", "80+"),  # Define labels
+                         right = TRUE)  # Include upper bound in each range
+table(clin_df$age_group)
+Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$age_group
+fit_age = survfit(Surv(OS_MONTHS, deceased) ~ age_group, data=clin_df)
+ggsurvplot(fit_age, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("20-40", "40-60", "60-80", "80+"), title = "Survival Anlysis of Age", xlab = "Time (Months)")
 ```
 
 ```{r}
@@ -168,18 +183,7 @@ clin_df[which(clin_df$SUBTYPE == "N/A"), "SUBTYPE"] = NA
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$SUBTYPE
 fit_subtype = survfit(Surv(OS_MONTHS, deceased) ~ SUBTYPE, data=clin_df)
 
-ggsurvplot(fit_subtype, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("BRCA_Basal", "BRCA_Her2", "BRCA_LumA", "BRCA_LumB", "BRCA_Normal"))
-```
-
-```{r}
-#Lymph Node Survival 
-clin_df[which(clin_df$PRIMARY_LYMPH_NODE_PRESENTATION_ASSESSMENT == ""), "PRIMARY_LYMPH_NODE_PRESENTATION_ASSESSMENT"] = NA
-table(clin_df$PRIMARY_LYMPH_NODE_PRESENTATION_ASSESSMENT)
-
-Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$PRIMARY_LYMPH_NODE_PRESENTATION_ASSESSMENT
-fit_lymph = survfit(Surv(OS_MONTHS, deceased) ~ PRIMARY_LYMPH_NODE_PRESENTATION_ASSESSMENT, data=clin_df)
-fit_lymph$strata
-ggsurvplot(fit_lymph, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("No Lymph Presenation", "Lymph Presentation"))
+ggsurvplot(fit_subtype, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("BRCA_Basal", "BRCA_Her2", "BRCA_LumA", "BRCA_LumB", "BRCA_Normal"), title= "Survival Analysis of Cancer Subtype", xlab = "Time (Months)")
 ```
 
 ```{r}
@@ -187,7 +191,7 @@ ggsurvplot(fit_lymph, data=clin_df, pval=T, risk.table=T, risk.table.col="strata
 table(clin_df$RADIATION_THERAPY)
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$RADIATION_THERAPY
 fit_rad = survfit(Surv(OS_MONTHS, deceased) ~ RADIATION_THERAPY, data=clin_df)
-ggsurvplot(fit_rad, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35)
+ggsurvplot(fit_rad, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival analysis of Radiation Treatment", xlab = "Time (Months)")
 ```
 
 ```{r}
@@ -195,15 +199,7 @@ ggsurvplot(fit_rad, data=clin_df, pval=T, risk.table=T, risk.table.col="strata",
 table(data$PERSON_NEOPLASM_CANCER_STATUS)
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$PERSON_NEOPLASM_CANCER_STATUS
 fit_status = survfit(Surv(OS_MONTHS, deceased) ~ PERSON_NEOPLASM_CANCER_STATUS, data=clin_df)
-ggsurvplot(fit_status, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("Tumor Free", "With Tumor"))
-```
-
-```{r}
-# Cancer treat
-table(data$HISTORY_NEOADJUVANT_TRTYN)
-Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ data$HISTORY_NEOADJUVANT_TRTYN
-fit_treat = survfit(Surv(OS_MONTHS, deceased) ~ HISTORY_NEOADJUVANT_TRTYN, data=clin_df)
-ggsurvplot(fit_treat, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35)
+ggsurvplot(fit_status, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("Tumor Free", "With Tumor"), title = "Survival Analysis of Cancer Status", xlab = "Time (Months)")
 ```
 
 ```{r}
@@ -211,13 +207,12 @@ ggsurvplot(fit_treat, data=clin_df, pval=T, risk.table=T, risk.table.col="strata
 table(data$NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT)
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ data$NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT
 fit_new = survfit(Surv(OS_MONTHS, deceased) ~ NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT, data=clin_df)
-ggsurvplot(fit_new, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("No new tumor", "New Tumor after treatment"))
+ggsurvplot(fit_new, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("No new tumor", "New Tumor after treatment"), title = "Survival Analysis of Post Treatment Status", xlab = "Time (Months)")
 ```
 
 ```{r}
 #combinations
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$PERSON_NEOPLASM_CANCER_STATUS + clin_df$SUBTYPE
 fit_comb = survfit(Surv(OS_MONTHS, deceased) ~ clin_df$PERSON_NEOPLASM_CANCER_STATUS + clin_df$SUBTYPE, data=clin_df)
-ggsurvplot(fit_comb, data=clin_df, pval=T, legend = "bottom",legend.labs = c("TF: Basal", "TF: Her2", "TF: LumA","TF: LumB","TF: Normal","WT: Basal", "WT: Her2", "WT: LumA","WT: LumB","WT: Normal"))
+ggsurvplot(fit_comb, data=clin_df, pval=T, legend = "bottom",legend.labs = c("TF: Basal", "TF: Her2", "TF: LumA","TF: LumB","TF: Normal","WT: Basal", "WT: Her2", "WT: LumA","WT: LumB","WT: Normal"), title = "Comparing subtype to tumor free(TF) and with tumor (WT)", xlab = "Time (Months)")
 ```
-
