@@ -1,0 +1,218 @@
+---
+title: "Differential expression analysis"
+author: "21267455 Ella Zhang"
+date: "2024-11-27"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+library(dplyr)
+library(tidyr)
+library(survival)
+library(survminer)
+library(readr)
+library(KEGGREST)
+```
+
+```{r}
+setwd("C:\\Users\\COLORFUL\\Documents\\bmeg310-1")
+clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", header = TRUE)
+data.mutations <- read.table("data_mutations.txt", sep = "\t", header = TRUE)
+data.RNAseq <- read.csv("RNAseq_BRCA.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r}
+# Preprocess data
+colnames(data.RNAseq) <- substring(colnames(data.RNAseq),1,12)
+colnames(data.RNAseq) <- gsub("\\.","-",colnames(data.RNAseq))
+data.mutations$Tumor_Sample_Barcode <- substring(data.mutations$Tumor_Sample_Barcode, 1, 12)
+data.RNAseq$X <- gsub("\\..*", "", data.RNAseq$X)
+```
+
+```{r}
+#Preprocess
+common_genes <- intersect(data.RNAseq$X, data.mutations$Gene)
+data.RNAseq.filtered <- data.RNAseq
+
+data.RNAseq.filtered$X <- make.unique(data.RNAseq.filtered$X)
+data.RNAseq.filtered <- data.RNAseq.filtered[data.RNAseq.filtered$X %in% common_genes, ]
+
+rownames(data.RNAseq.filtered) <- data.RNAseq.filtered[,1]
+data.RNAseq.filtered <- data.RNAseq.filtered[,-1]
+data.RNAseq.filtered <- as.matrix(data.RNAseq.filtered)
+storage.mode(data.RNAseq.filtered) <- "numeric"
+```
+
+```{r}
+#Filter data for low count
+data.RNAseq.filtered <- data.RNAseq.filtered[rowSums(data.RNAseq.filtered)>1,]
+
+common_ids <- Reduce(intersect, list(clinical.patients$PATIENT_ID, colnames(data.RNAseq.filtered)))
+
+filtered.clinical <- clinical.patients %>% filter(PATIENT_ID %in% common_ids)
+data.RNAseq.filtered <- data.RNAseq.filtered[, colnames(data.RNAseq.filtered) %in% common_ids]
+```
+
+
+```{r}
+#Sort coldata and countdata
+filtered.clinical <- filtered.clinical[order(filtered.clinical$PATIENT_ID), ]
+data.RNAseq.filtered <- data.RNAseq.filtered[,order(colnames(data.RNAseq.filtered))]
+```
+
+```{r}
+#Condition for DESeq2 coldata
+colData <- cbind(filtered.clinical$PATIENT_ID,filtered.clinical$SUBTYPE)
+rownames(colData) <- colData[,1]
+colData <- colData[,-1]
+colData <- as.data.frame(colData)
+#Write BRCA to empty condition name
+colnames(colData) <- "condition"
+colData$condition <- ifelse(
+  is.na(colData$condition) | colData$condition == "",
+  "BRCA",
+  colData$condition
+)
+colData$condition <- as.factor(colData$condition)
+```
+
+```{r}
+#Run DESeq2
+dds = DESeqDataSetFromMatrix(countData=data.RNAseq.filtered,
+                              colData=colData,
+                              design=~condition)
+dds = DESeq(dds)
+```
+
+
+```{r}
+res <- results(dds)
+res
+```
+
+```{r}
+#Normalize the data by using DEseq2
+data.RNAseq.normalized.DESeq <- counts(dds, normalized = TRUE)
+head(data.RNAseq.normalized.DESeq)
+```
+
+```{r}
+# Calculate variances
+gene_variances <- apply(data.RNAseq.normalized.DESeq, 1, var)
+
+#Pick the top 500 most variable genes
+top_genes <- order(gene_variances, decreasing = TRUE)[1:500]
+
+data.RNAseq.normalized.DESeq.top500 <- data.RNAseq.normalized.DESeq[top_genes, ]
+head(data.RNAseq.normalized.DESeq.top500)
+```
+
+
+```{r}
+RNAseq.distance <- dist(t(data.RNAseq.normalized.DESeq.top500))
+
+annot_col = data.frame(colData$condition)
+row.names(annot_col) <- rownames(colData)
+
+RNAseq.distance.Matrix = as.matrix(RNAseq.distance)
+rownames(RNAseq.distance.Matrix) = colnames(data.RNAseq.filtered)
+colnames(RNAseq.distance.Matrix) = colnames(data.RNAseq.filtered)
+
+pheatmap(RNAseq.distance.Matrix,
+         clustering_distance_rows = RNAseq.distance,
+         clustering_distance_cols = RNAseq.distance,
+         cluster_rows=FALSE, show_rownames=TRUE,
+         cluster_cols=TRUE,
+         annotation_col=annot_col)
+```
+
+```{r}
+#Use ward.D2 to divide the result into 6 groups
+hclust_result <- hclust(RNAseq.distance, method = "ward.D2")
+cluster_assignments <- cutree(hclust_result, k = 6)
+colData$Cluster <- as.factor(cluster_assignments)
+clinical.patients$Cluster <- as.factor(cluster_assignments[match(clinical.patients$PATIENT_ID, rownames(colData))])
+```
+
+```{r}
+#DE analysis on all genes
+dds <- DESeqDataSetFromMatrix(
+  countData = data.RNAseq.filtered,
+  colData = colData,
+  design = ~ Cluster
+)
+dds <- DESeq(dds)
+res <- results(dds, contrast = c("Cluster", "1", "2"))  #Compare Cluster 1 and Cluster 2
+sig_genes <- subset(res, padj < 0.05)
+head(sig_genes)
+```
+
+
+```{r}
+#pathway analysis
+
+gene_list <- rownames(sig_genes)
+mapped_genes <- mapIds(
+  org.Hs.eg.db,
+  keys = gene_list,
+  column = "ENTREZID",
+  keytype = "ENSEMBL",
+  multiVals = "first")
+
+mapped_genes <- na.omit(mapped_genes)
+head(mapped_genes)
+```
+
+```{r}
+kegg_results <- enrichKEGG(
+  gene = mapped_genes,
+  organism = "hsa",
+  keyType = "kegg",
+  pvalueCutoff = 0.05
+)
+head(kegg_results)
+
+```
+
+```{r}
+dotplot(kegg_results, showCategory = 10) + ggtitle("KEGG Pathway Enrichment Analysis")
+```
+
+```{r}
+#Comparing patient survival data
+boxplot(clinical.patients$OS_MONTHS ~ clinical.patients$Cluster,
+        main = "Survival Comparison Across Clusters",
+        xlab = "Cluster", ylab = "Survival Time")
+```
+
+
+```{r}
+#Compare other clinical features
+table(clinical.patients$Cluster, clinical.patients$AGE)
+table(clinical.patients$Cluster, clinical.patients$SEX)
+table(clinical.patients$Cluster, clinical.patients$RACE)
+```
+
+
+```{r}
+#Correlation analysis of clustering and mutation data
+mutation_matrix <- data.RNAseq.normalized.DESeq
+mutation_enrichment <- apply(mutation_matrix, 1, function(x) {
+  tapply(x, colData$Cluster, mean)
+})
+mutation_enrichment <- as.data.frame(t(mutation_enrichment))
+head(mutation_enrichment)
+```
+
