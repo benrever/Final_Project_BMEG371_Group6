@@ -1,3 +1,154 @@
 ---
 output: pdf_document
 ---
+
+### Reading and Cleaning Data
+
+```{r}
+raw.clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", 
+                                    header = TRUE)
+raw.data.mutations <- read.table("data_mutations.txt", sep = "\t", 
+                                 header = TRUE)
+raw.data.RNAseq <- read.csv("RNAseq_BRCA.csv", row.names=1)
+
+#Filter data where you only have 0 or 1 read count across all samples.
+raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
+```
+
+```{r message=FALSE}
+simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+})
+
+colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+}))
+```
+
+```{r}
+#Unique Patients in each data set 
+unique.clinical <- as.data.frame(unique(raw.clinical.patients$PATIENT_ID))
+unique.mutations <- as.data.frame(unique
+                                  (raw.data.mutations$Tumor_Sample_Barcode))
+unique.RNA <- as.data.frame(colnames(raw.data.RNAseq[,1:length(raw.data.RNAseq)]))
+
+#Addition patient ID's to Mutation data 
+mutation.patients <- as.data.frame(raw.data.mutations$Tumor_Sample_Barcode)
+colnames(mutation.patients) <- "Patient_ID"
+mutation.patients$Patient_ID <- substr(mutation.patients$Patient_ID, 1, 12)
+raw.data.mutations <- cbind(mutation.patients, raw.data.mutations)
+
+colnames(unique.clinical) <- "Patient_ID"
+colnames(unique.mutations) <- "Patient_ID"
+colnames(unique.RNA) <- "Patient_ID"
+unique.mutations$Patient_ID <- substr(unique.mutations$Patient_ID, 1, 12)
+
+#Finding common patients
+common_patient_ids <- Reduce(intersect, list(
+  unique.clinical$Patient_ID,
+  unique.mutations$Patient_ID,
+  unique.RNA$Patient_ID
+))
+
+#3 data sets with all 975 common patients
+clinical.data <- raw.clinical.patients[raw.clinical.patients$PATIENT_ID 
+                                        %in% common_patient_ids, ]
+mutation.data <- raw.data.mutations[raw.data.mutations$Patient_ID 
+                                    %in% common_patient_ids, ]
+seq.data <- raw.data.RNAseq[,names(raw.data.RNAseq)
+                            %in% clinical.data$PATIENT_ID]
+```
+
+Now clinical.data, mutation.data, and seq.data all contain common patients across all data sets.
+
+```{r}
+#BiocManager::install("DESeq2")
+#install.packages("pheatmap")
+#install.packages("ggplot2")
+#BiocManager::install("AnnotationDbi")
+#BiocManager::install("org.Hs.eg.db")
+#BiocManager::install("pathview")
+#BiocManager::install("gage")
+#BiocManager::install("gageData")
+library(DESeq2)
+library(dplyr)
+library(ComplexHeatmap)
+library(ggplot2)
+library(EnhancedVolcano)
+
+dds <- DESeqDataSetFromMatrix(
+  countData = seq.data,
+  colData = clinical.data, 
+  design = ~ 1 
+)
+
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized = TRUE)
+
+# Optional: Convert normalized counts to log scale for downstream analysis
+log_norm_counts <- log2(normalized_counts + 1)
+
+gene_variance <- apply(seq.data, 1, var)
+
+# Sort genes by variance
+top_genes <- names(sort(gene_variance, decreasing = TRUE)[1:500])
+
+# Subset the expression data
+filtered_data <- seq.data[top_genes, ]
+
+gene_variance <- apply(log_norm_counts, 1, var)
+
+# Select top 500 most variable genes
+top_genes <- names(sort(gene_variance, decreasing = TRUE)[1:500])
+
+# Subset normalized expression matrix
+filtered_data <- log_norm_counts[top_genes, ]
+
+dist_matrix <- dist(t(filtered_data)) # Transpose so samples are clustered
+hclust_results <- hclust(dist_matrix, method = "ward.D2")
+
+# Plot dendrogram
+plot(hclust_results, labels = FALSE)
+
+Heatmap(
+  filtered_data,
+  name = "Expression",
+  cluster_rows = TRUE, # Cluster genes
+  cluster_columns = TRUE, # Cluster samples
+  show_column_names = FALSE,
+  show_row_names = FALSE
+)
+
+# Cut the dendrogram to define clusters (e.g., 3 clusters)
+cut_clusters <- cutree(hclust_results, k = 3)
+
+# Add cluster information to clinical data
+clinical.data$Cluster <- cut_clusters[match(clinical.data$PATIENT_ID, names(cut_clusters))]
+
+seq.data <- seq.data[, clinical.data$PATIENT_ID]
+
+# Create DESeq2 dataset
+dds <- DESeqDataSetFromMatrix(
+  countData = seq.data,
+  colData = clinical.data,
+  design = ~ Cluster # Use cluster as the design variable
+)
+  # Run DESeq2 analysis
+dds <- DESeq(dds)
+
+# Perform pairwise comparisons between clusters
+# Example: Cluster 1 vs Cluster 2
+res <- results(dds, contrast = c("Cluster", "1", "2"))
+
+# Sort results by adjusted p-value (FDR)
+res <- res[order(res$padj), ]
+
+# View significant DE genes
+sig_genes <- sort(subset(res, padj < 0.05), decreasing = TRUE)[1:500,]
+head(sig_genes)
+
+```
+
+

@@ -1,0 +1,285 @@
+---
+output: pdf_document
+---
+
+### Reading and Cleaning Data
+
+```{r}
+raw.clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", 
+                                    header = TRUE)
+raw.data.mutations <- read.table("data_mutations.txt", sep = "\t", 
+                                 header = TRUE)
+raw.data.RNAseq <- read.csv("RNAseq_BRCA.csv", row.names=1)
+
+#Filter data where you only have 0 or 1 read count across all samples.
+raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
+```
+
+```{r message=FALSE}
+simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+})
+
+colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+}))
+```
+
+```{r}
+#Unique Patients in each data set 
+unique.clinical <- as.data.frame(unique(raw.clinical.patients$PATIENT_ID))
+unique.mutations <- as.data.frame(unique
+                                  (raw.data.mutations$Tumor_Sample_Barcode))
+unique.RNA <- as.data.frame(colnames(raw.data.RNAseq[,1:length(raw.data.RNAseq)]))
+
+#Addition patient ID's to Mutation data 
+mutation.patients <- as.data.frame(raw.data.mutations$Tumor_Sample_Barcode)
+colnames(mutation.patients) <- "Patient_ID"
+mutation.patients$Patient_ID <- substr(mutation.patients$Patient_ID, 1, 12)
+raw.data.mutations <- cbind(mutation.patients, raw.data.mutations)
+
+colnames(unique.clinical) <- "Patient_ID"
+colnames(unique.mutations) <- "Patient_ID"
+colnames(unique.RNA) <- "Patient_ID"
+unique.mutations$Patient_ID <- substr(unique.mutations$Patient_ID, 1, 12)
+
+#Finding common patients
+common_patient_ids <- Reduce(intersect, list(
+  unique.clinical$Patient_ID,
+  unique.mutations$Patient_ID,
+  unique.RNA$Patient_ID
+))
+
+#3 data sets with all 975 common patients
+clinical.data <- raw.clinical.patients[raw.clinical.patients$PATIENT_ID 
+                                        %in% common_patient_ids, ]
+mutation.data <- raw.data.mutations[raw.data.mutations$Patient_ID 
+                                    %in% common_patient_ids, ]
+seq.data <- raw.data.RNAseq[,names(raw.data.RNAseq)
+                            %in% clinical.data$PATIENT_ID]
+```
+
+Now clinical.data, mutation.data, and seq.data all contain common patients across all data sets.
+
+```{r}
+#BiocManager::install("DESeq2")
+#install.packages("pheatmap")
+#install.packages("ggplot2")
+#BiocManager::install("AnnotationDbi")
+#BiocManager::install("org.Hs.eg.db")
+#BiocManager::install("pathview")
+#BiocManager::install("gage")
+#BiocManager::install("gageData")
+library(DESeq2)
+library(dplyr)
+library(ComplexHeatmap)
+library(ggplot2)
+library(EnhancedVolcano)
+
+dds <- DESeqDataSetFromMatrix(
+  countData = seq.data,
+  colData = clinical.data, 
+  design = ~ 1 
+)
+
+#Normalization
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized = TRUE)
+log_norm_counts <- log2(normalized_counts + 1)
+
+#Find most variable genes
+gene_variance <- apply(log_norm_counts, 1, var)
+
+# Select top 1000 most variable genes
+top_genes <- names(sort(gene_variance, decreasing = TRUE)[1:1000])
+filtered_data <- log_norm_counts[top_genes, ]
+
+#Clustering 
+dist_matrix <- dist(t(filtered_data))
+hclust_results <- hclust(dist_matrix, method = "ward.D2")
+plot(hclust_results, labels = FALSE)
+
+
+
+Heatmap(
+  filtered_data,
+  name = "Expression",
+  cluster_rows = TRUE, 
+  cluster_columns = TRUE,
+  show_column_names = FALSE,
+  show_row_names = FALSE
+)
+
+```
+
+```{r}
+# Add cluster information to clinical data
+cut_clusters <- cutree(hclust_results, k = 4)
+clinical.data$Cluster <- cut_clusters[match(clinical.data$PATIENT_ID, names(cut_clusters))]
+
+
+pca_res <- prcomp(t(filtered_data))
+score <- pca_res$x
+
+score = as.data.frame(score)
+score$color <- clinical.data$Cluster[match(rownames(score), clinical.data$PATIENT_ID)]
+
+ggplot(score, aes(x=PC1, y=PC2,  color=color)) + 
+  geom_point(size = 4)
+
+#Create subclusters if wanted 
+clinical.data$subcluster <- clinical.data$Cluster[ifelse((clinical.data$Cluster == 4), 2, 1)] # Change groups 
+
+table(clinical.data$AJCC_PATHOLOGIC_TUMOR_STAGE)
+```
+
+```{r}
+mutation.patients <- mutation.data[mutation.data$Hugo_Symbol %in% c("TP53", "PIK3CA", "TTN"), ]
+
+mutation.patients$Cluster <- ifelse(mutation.patients$Hugo_Symbol == "TP53", 1,
+                             ifelse(mutation.patients$Hugo_Symbol == "TTN", 2,
+                             ifelse(mutation.patients$Hugo_Symbol == "PIK3CA", 3, "Other")))
+table(mutation.patients$Cluster)
+
+common <- intersect(mutation.patients$Patient_ID, clinical.data$PATIENT_ID)
+
+# Use aggregate to ensure one patient can be assigned a single cluster
+patient_clusters <- aggregate(Cluster ~ Patient_ID, data = mutation.patients, FUN = function(x) x[1])
+
+# Merge clusters into clinical data
+clinical.data <- merge(clinical.data, patient_clusters, by.x = "PATIENT_ID", by.y = "Patient_ID", all.x = TRUE)
+
+# Fill non-mutated patients with a default cluster, e.g., 3
+clinical.data$Cluster[is.na(clinical.data$Cluster)] <- "Other"
+
+
+clinical.data$Patient_Status <- ifelse(clinical.data$PATIENT_ID %in% common, 1, 2)
+
+clinical.data$tp <- clinical.data$PATIENT_ID[ifelse((clinical.data$PATIENT_ID), 2, 1)] # Change groups 
+
+table(clinical.data$Patient_Status)
+
+genes <- as.data.frame(mutation.patients$Gene)
+```
+
+
+```{r}
+library("TCGAbiolinks")
+library("survival")
+library("survminer")
+library("SummarizedExperiment")
+
+clinical.data$deceased = clinical.data$OS_STATUS == "1:DECEASED"
+
+Surv(clinical.data$OS_MONTHS, clinical.data$deceased) ~ Cluster
+fit_new = survfit(Surv(OS_MONTHS, deceased) ~ Cluster, data=clinical.data)
+ggsurvplot(fit_new, data=clinical.data, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Analysis of Clusters", xlab = "Time (Months)")
+```
+
+```{r}
+# Expression analysis on all genes with clusters as conditon
+
+clinical.data$Cluster <- factor(clinical.data$Cluster)
+
+dds_clus <- DESeqDataSetFromMatrix(
+  countData = seq.data,
+  colData = clinical.data,
+  design = ~ Cluster
+)
+
+dds_clus <- DESeq(dds_clus)
+
+res <- results(dds_clus, contrast = c("Cluster", 1, 4))
+
+resultsNames(dds_clus)
+
+# Sort results by adjusted p-value (FDR)
+res <- res[order(res$padj), ]
+
+summary(res)
+
+res.05 <- results(dds_clus, alpha = 0.05)
+table(res.05$padj < 0.05)
+
+resLFC1 <- results(dds_clus, lfcThreshold=1)
+table(resLFC1$padj < 0.1)
+
+res.order <- res[order(res$pvalue),]
+summary(res.order)
+
+# View significant DE genes
+sig_genes <- sort(subset(res, padj < 0.05), decreasing = TRUE)[1:1000,]
+head(sig_genes)
+
+plotCounts(dds_clus, gene="ENSG00000110484.7", intgroup="Cluster")
+```
+
+```{r}
+library(EnhancedVolcano)
+
+EnhancedVolcano(
+  res,
+  lab = rownames(res),
+  x = "log2FoldChange",
+  y = "padj",
+  pCutoff = 0.05,
+  FCcutoff = 1,
+  title = "DE Analysis: Cluster 1 vs Cluster 2",
+  subtitle = "Differentially Expressed Genes"
+)
+
+```
+
+```{r}
+de_gene_counts <- log_norm_counts[rownames(sig_genes), ]
+
+Heatmap(
+  de_gene_counts,
+  name = "Expression",
+  cluster_rows = TRUE,
+  cluster_columns = TRUE,
+  show_column_names = FALSE,
+  show_row_names = TRUE
+)
+```
+
+```{r}
+
+resSig <- subset(res, padj < 0.05)
+# Get the indices for top 20 upregulated and downregulated genes
+genes.top.upreg <- order(resSig$log2FoldChange,decreasing = TRUE)[1:20]
+genes.top.downreg <- order(resSig$log2FoldChange,decreasing = FALSE)[1:20]
+
+# Bind the two lists of genes into a single vector
+genes.top <- c(genes.top.upreg, genes.top.downreg)
+
+
+# Variance stabilizing transformation
+vsd <- vst(dds_clus)
+
+pca_res <- prcomp(t(assay(vsd)), scale. = TRUE)
+score <- pca_res$x
+
+score = as.data.frame(score)
+score$color <- as.factor(clinical.data$Cluster)
+
+
+ggplot(score, aes(x=PC1, y=PC2,  color=color)) + 
+  geom_point(size = 4)
+```
+```{r}
+
+rownames(seq.data) <- gsub("\\..*", "", rownames(seq.data))
+
+head(rownames(seq.data))
+
+which(mutation.data$Gene == "ENSG00000000003")
+
+which(rownames(seq.data) == "ENSG00000000003")
+
+head(rownames(seq.data))
+```
+
+
