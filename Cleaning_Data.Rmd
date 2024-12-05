@@ -5,51 +5,58 @@ output: pdf_document
 ### Reading and Cleaning Data
 
 ```{r}
-clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", header = TRUE)
-data.mutations <- read.table("data_mutations.txt", sep = "\t", header = TRUE)
-data.RNAseq <- read.csv("RNAseq_BRCA.csv")
+raw.clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", 
+                                    header = TRUE)
+raw.data.mutations <- read.table("data_mutations.txt", sep = "\t", 
+                                 header = TRUE)
+raw.data.RNAseq <- read.csv("RNAseq_BRCA.csv", row.names=1)
+
+#Filter data where you only have 0 or 1 read count across all samples.
+raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
 ```
 
-```{r, message=FALSE}
-library(stringr)
-
-# Rename columns to match the desired format
-colnames(data.RNAseq) <- sapply(colnames(data.RNAseq), function(name) {
-  
-  segments <- strsplit(name, "\\.")[[1]][1:3]
-  
-  paste(segments, collapse = "-")
+```{r message=FALSE}
+simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
 })
-colnames(data.RNAseq)[1] <- "Transcript_ID"
+
+colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+}))
 ```
 
 ```{r}
-unique.clinical <- as.data.frame(unique(clinical.patients$PATIENT_ID))
-unique.mutations <- as.data.frame(unique(data.mutations$Tumor_Sample_Barcode))
-unique.RNA <- as.data.frame(colnames(data.RNAseq[,2:1232]))
+#Unique Patients in each data set 
+unique.clinical <- as.data.frame(unique(raw.clinical.patients$PATIENT_ID))
+unique.mutations <- as.data.frame(unique
+                                  (raw.data.mutations$Tumor_Sample_Barcode))
+unique.RNA <- as.data.frame(colnames(raw.data.RNAseq[,1:length(raw.data.RNAseq)]))
 
-mutation.patients <- as.data.frame(data.mutations$Tumor_Sample_Barcode)
+#Addition patient ID's to Mutation data 
+mutation.patients <- as.data.frame(raw.data.mutations$Tumor_Sample_Barcode)
 colnames(mutation.patients) <- "Patient_ID"
 mutation.patients$Patient_ID <- substr(mutation.patients$Patient_ID, 1, 12)
-
-data.mutations <- cbind(mutation.patients, data.mutations)
-
-colnames(data.mutations)
-
+raw.data.mutations <- cbind(mutation.patients, raw.data.mutations)
 
 colnames(unique.clinical) <- "Patient_ID"
 colnames(unique.mutations) <- "Patient_ID"
 colnames(unique.RNA) <- "Patient_ID"
-
 unique.mutations$Patient_ID <- substr(unique.mutations$Patient_ID, 1, 12)
 
-# Find common patient IDs across all three data frames
-common_patient_ids <- Reduce(intersect, list(unique.clinical$Patient_ID, unique.mutations$Patient_ID, unique.RNA$Patient_ID))
+#Finding common patients
+common_patient_ids <- Reduce(intersect, list(
+  unique.clinical$Patient_ID,
+  unique.mutations$Patient_ID,
+  unique.RNA$Patient_ID
+))
 
-filtered.clinical <- clinical.patients[clinical.patients$PATIENT_ID %in% common_patient_ids, ]
-filtered.mutations <- data.mutations[data.mutations$Patient_ID %in% common_patient_ids, ]
-filtered.RNA <- data.RNAseq[, names(data.RNAseq)%in% common_patient_ids]
-filtered.RNA <- cbind(data.RNAseq[,1], filtered.RNA)
-colnames(filtered.RNA)[1] <- "Transcript_ID"
-
+#3 data sets with all 975 common patients
+clinical.data <- raw.clinical.patients[raw.clinical.patients$PATIENT_ID 
+                                        %in% common_patient_ids, ]
+mutation.data <- raw.data.mutations[raw.data.mutations$Patient_ID 
+                                    %in% common_patient_ids, ]
+seq.data <- raw.data.RNAseq[,names(raw.data.RNAseq)
+                            %in% clinical.data$PATIENT_ID]
 ```
