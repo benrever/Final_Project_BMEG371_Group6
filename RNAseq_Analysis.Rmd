@@ -1,3 +1,298 @@
 ---
-output: pdf_document
+title: "Differential expression analysis"
+author: "21267455 Ella Zhang"
+date: "2024-11-27"
+output:
+  pdf_document:
+    latex_engine: xelatex
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+library(dplyr)
+library(tidyr)
+library(survival)
+library(survminer)
+library(readr)
+library(KEGGREST)
+```
+
+```{r}
+setwd("C:\\Users\\COLORFUL\\Documents\\bmeg310-1")
+clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", header = TRUE)
+data.mutations <- read.table("data_mutations.txt", sep = "\t", header = TRUE)
+data.RNAseq <- read.csv("RNAseq_BRCA.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+
+```{r}
+# Preprocess data
+colnames(data.RNAseq) <- substring(colnames(data.RNAseq),1,12)
+colnames(data.RNAseq) <- gsub("\\.","-",colnames(data.RNAseq))
+data.mutations$Tumor_Sample_Barcode <- substring(data.mutations$Tumor_Sample_Barcode, 1, 12)
+data.RNAseq$X <- gsub("\\..*", "", data.RNAseq$X)
+
+#Preprocess
+common_genes <- intersect(data.RNAseq$X, data.mutations$Gene)
+data.RNAseq.filtered <- data.RNAseq
+
+data.RNAseq.filtered$X <- make.unique(data.RNAseq.filtered$X)
+data.RNAseq.filtered <- data.RNAseq.filtered[data.RNAseq.filtered$X %in% common_genes, ]
+
+rownames(data.RNAseq.filtered) <- data.RNAseq.filtered[,1]
+data.RNAseq.filtered <- data.RNAseq.filtered[,-1]
+data.RNAseq.filtered <- as.matrix(data.RNAseq.filtered)
+storage.mode(data.RNAseq.filtered) <- "numeric"
+
+#Filter data for low count
+data.RNAseq.filtered <- data.RNAseq.filtered[rowSums(data.RNAseq.filtered)>1,]
+
+common_ids <- Reduce(intersect, list(clinical.patients$PATIENT_ID, colnames(data.RNAseq.filtered)))
+
+filtered.clinical <- clinical.patients %>% filter(PATIENT_ID %in% common_ids)
+data.RNAseq.filtered <- data.RNAseq.filtered[, colnames(data.RNAseq.filtered) %in% common_ids]
+
+#Sort coldata and countdata
+filtered.clinical <- filtered.clinical[order(filtered.clinical$PATIENT_ID), ]
+data.RNAseq.filtered <- data.RNAseq.filtered[,order(colnames(data.RNAseq.filtered))]
+
+#Condition for DESeq2 coldata
+colData <- cbind(filtered.clinical$PATIENT_ID,filtered.clinical$SUBTYPE)
+rownames(colData) <- colData[,1]
+colData <- colData[,-1]
+colData <- as.data.frame(colData)
+#Write BRCA to empty condition name
+colnames(colData) <- "condition"
+colData$condition <- ifelse(
+  is.na(colData$condition) | colData$condition == "",
+  "BRCA",
+  colData$condition
+)
+colData$condition <- as.factor(colData$condition)
+```
+
+```{r}
+#Run DESeq2
+dds = DESeqDataSetFromMatrix(countData=data.RNAseq.filtered,
+                              colData=colData,
+                              design=~1)
+dds = estimateSizeFactors(dds)
+```
+
+```{r}
+#Normalize the data by using DEseq2
+data.RNAseq.normalized.DESeq <- counts(dds, normalized = TRUE)
+
+# Calculate variances
+gene_variances <- apply(data.RNAseq.normalized.DESeq, 1, var)
+
+#Pick the top 1000 most variable genes
+top_genes <- order(gene_variances, decreasing = TRUE)[1:1000]
+
+data.RNAseq.normalized.DESeq.top1000 <- data.RNAseq.normalized.DESeq[top_genes, ]
+```
+
+```{r}
+#Use pheat map to find cluster
+RNAseq.distance <- dist(t(data.RNAseq.normalized.DESeq.top1000))
+annot_col = data.frame(colData$condition)
+row.names(annot_col) <- rownames(colData)
+RNAseq.distance.Matrix = as.matrix(RNAseq.distance)
+rownames(RNAseq.distance.Matrix) = colnames(data.RNAseq.filtered)
+colnames(RNAseq.distance.Matrix) = colnames(data.RNAseq.filtered)
+
+pheatmap(
+  RNAseq.distance.Matrix,
+  annotation_col = annot_col,
+  clustering_distance_rows = RNAseq.distance,
+  clustering_distance_cols = RNAseq.distance,
+  clustering_method = "ward.D",
+  main = "Clustered Heatmap",
+  show_rownames=FALSE,
+  show_colnames=FALSE
+)
+```
+
+```{r}
+RNAseq.distance <- dist(t(data.RNAseq.normalized.DESeq.top1000),upper = TRUE)
+
+#Use ward.D2 to divide the result into 3 groups
+hclust_result <- hclust(RNAseq.distance, method = "ward.D")
+cluster_assignments <- cutree(hclust_result, k = 3)
+colData$Cluster <- as.factor(cluster_assignments)
+clinical.patients$Cluster <- as.factor(cluster_assignments[match(clinical.patients$PATIENT_ID, rownames(colData))])
+```
+
+```{r}
+#Show number of patients in each cluster
+cluster_counts <- table(colData$Cluster)
+barplot(cluster_counts,
+        main = "Number of Patients in Each Cluster",
+        xlab = "Cluster",
+        ylab = "Number of Patients")
+```
+
+
+```{r}
+#DE analysis on all genes
+dds_by_Cluster <- DESeqDataSetFromMatrix(
+  countData = data.RNAseq.filtered,
+  colData = colData,
+  design = ~ Cluster
+)
+dds_by_Cluster <- DESeq(dds_by_Cluster)
+```
+
+
+```{r}
+res_Cluster12 <- results(dds_by_Cluster, contrast = c("Cluster", "1", "2"))  #Compare Cluster 1 and Cluster 2
+res_Cluster23 <- results(dds_by_Cluster, contrast = c("Cluster", "2", "3"))  #Compare Cluster 1 and Cluster 2
+res_Cluster13 <- results(dds_by_Cluster, contrast = c("Cluster", "1", "3"))  #Compare Cluster 1 and Cluster 2
+sig_genes12 <- subset(res_Cluster12, padj < 0.05)
+sig_genes23 <- subset(res_Cluster23, padj < 0.05)
+sig_genes13 <- subset(res_Cluster13, padj < 0.05)
+
+head(sig_genes12)
+
+head(sig_genes23)
+
+head(sig_genes13)
+```
+
+
+```{r}
+#pathway analysis
+gene_list12 <- rownames(sig_genes12)
+mapped_genes12 <- mapIds(
+  org.Hs.eg.db,
+  keys = gene_list12,
+  column = "ENTREZID",
+  keytype = "ENSEMBL",
+  multiVals = "first")
+
+mapped_genes12 <- na.omit(mapped_genes12)
+head(mapped_genes12)
+
+#pathway analysis
+gene_list23 <- rownames(sig_genes23)
+mapped_genes23 <- mapIds(
+  org.Hs.eg.db,
+  keys = gene_list23,
+  column = "ENTREZID",
+  keytype = "ENSEMBL",
+  multiVals = "first")
+
+mapped_genes23 <- na.omit(mapped_genes23)
+head(mapped_genes23)
+
+#pathway analysis
+gene_list13 <- rownames(sig_genes13)
+mapped_genes13 <- mapIds(
+  org.Hs.eg.db,
+  keys = gene_list13,
+  column = "ENTREZID",
+  keytype = "ENSEMBL",
+  multiVals = "first")
+
+mapped_genes13 <- na.omit(mapped_genes13)
+head(mapped_genes13)
+```
+
+```{r}
+kegg_results12 <- enrichKEGG(
+  gene = mapped_genes12,
+  organism = "hsa",
+  keyType = "kegg",
+  pvalueCutoff = 0.05
+)
+head(kegg_results12)
+
+kegg_results23 <- enrichKEGG(
+  gene = mapped_genes23,
+  organism = "hsa",
+  keyType = "kegg",
+  pvalueCutoff = 0.05
+)
+head(kegg_results23)
+
+kegg_results13 <- enrichKEGG(
+  gene = mapped_genes13,
+  organism = "hsa",
+  keyType = "kegg",
+  pvalueCutoff = 0.05
+)
+head(kegg_results13)
+```
+
+```{r}
+dotplot(kegg_results12, showCategory = 10) + ggtitle("KEGG Pathway Enrichment Analysis cluster 1 vs 2")
+
+dotplot(kegg_results23, showCategory = 10) + ggtitle("KEGG Pathway Enrichment Analysis cluster 2 vs 3")
+
+dotplot(kegg_results13, showCategory = 10) + ggtitle("KEGG Pathway Enrichment Analysis cluster 1 vs 3")
+```
+
+```{r}
+#Comparing patient survival data
+boxplot(clinical.patients$OS_MONTHS ~ clinical.patients$Cluster,
+        main = "Survival Comparison Across Clusters",
+        xlab = "Cluster", ylab = "Survival Time")
+
+clinical.patients$Survival_GROUP <- cut(
+  clinical.patients$OS_MONTHS,
+  breaks = seq(0, max(clinical.patients$OS_MONTHS, na.rm = TRUE) + 50, by = 50),
+  right = FALSE,
+  labels = paste(seq(0, max(clinical.patients$OS_MONTHS, na.rm = TRUE), by = 50), 
+                 seq(50, max(clinical.patients$OS_MONTHS, na.rm = TRUE) + 50, by = 50) - 1, 
+                 sep = "-")
+)
+survival_group_table <- table(clinical.patients$Cluster, clinical.patients$Survival_GROUP)
+survival_group_table_precent <- prop.table(survival_group_table, margin = 1) * 100
+addmargins(round(survival_group_table_precent, 2), margin = 2)
+```
+
+```{r}
+#Compare other clinical features
+clinical.patients$AGE_GROUP <- cut(
+  clinical.patients$AGE,
+  breaks = seq(0, max(clinical.patients$AGE, na.rm = TRUE) + 20, by = 20),
+  right = FALSE,
+  labels = paste(seq(0, max(clinical.patients$AGE, na.rm = TRUE), by = 20), 
+                 seq(20, max(clinical.patients$AGE, na.rm = TRUE) + 20, by = 20) - 1, 
+                 sep = "-")
+)
+
+age_group_table <- table(clinical.patients$Cluster, clinical.patients$AGE_GROUP)
+age_group_table_percent_AGE <- prop.table(age_group_table, margin = 1) * 100
+addmargins(round(age_group_table_percent_AGE, 2), margin = 2)
+
+
+table_with_percent_SEX <- prop.table(table(clinical.patients$Cluster, clinical.patients$SEX), margin = 1) * 100
+addmargins(round(table_with_percent_SEX, 2), margin = 2)
+
+table_with_percent_RACE <- prop.table(table(clinical.patients$Cluster, clinical.patients$RACE), margin = 1) * 100
+addmargins(round(table_with_percent_RACE, 2), margin = 2)
+```
+
+```{r}
+
+```
+
+```{r}
+#Correlation analysis of clustering and mutation data
+mutation_matrix <- data.RNAseq.normalized.DESeq
+mutation_enrichment <- apply(mutation_matrix, 1, function(x) {
+  tapply(x, colData$Cluster, mean)
+})
+mutation_enrichment <- as.data.frame(t(mutation_enrichment))
+head(mutation_enrichment)
+```
