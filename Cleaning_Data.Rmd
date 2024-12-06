@@ -60,3 +60,12 @@ mutation.data <- raw.data.mutations[raw.data.mutations$Patient_ID
 seq.data <- raw.data.RNAseq[,names(raw.data.RNAseq)
                             %in% clinical.data$PATIENT_ID]
 ```
+
+
+
+
+
+
+
+
+

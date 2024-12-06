@@ -138,7 +138,7 @@ table(clinical.data$AJCC_PATHOLOGIC_TUMOR_STAGE)
 ```{r}
 mutation.patients <- mutation.data[mutation.data$Hugo_Symbol %in% c("TP53", "PIK3CA", "TTN"), ]
 
-mutation.patients$Cluster <- ifelse(mutation.patients$Hugo_Symbol == "TP53", 1,
+mutation.patients$Cluster_gene <- ifelse(mutation.patients$Hugo_Symbol == "TP53", 1,
                              ifelse(mutation.patients$Hugo_Symbol == "TTN", 2,
                              ifelse(mutation.patients$Hugo_Symbol == "PIK3CA", 3, "Other")))
 table(mutation.patients$Cluster)
@@ -146,13 +146,15 @@ table(mutation.patients$Cluster)
 common <- intersect(mutation.patients$Patient_ID, clinical.data$PATIENT_ID)
 
 # Use aggregate to ensure one patient can be assigned a single cluster
-patient_clusters <- aggregate(Cluster ~ Patient_ID, data = mutation.patients, FUN = function(x) x[1])
+patient_clusters <- aggregate(Cluster_gene ~ Patient_ID, data = mutation.patients, FUN = function(x) x[1])
 
 # Merge clusters into clinical data
 clinical.data <- merge(clinical.data, patient_clusters, by.x = "PATIENT_ID", by.y = "Patient_ID", all.x = TRUE)
 
 # Fill non-mutated patients with a default cluster, e.g., 3
-clinical.data$Cluster[is.na(clinical.data$Cluster)] <- "Other"
+clinical.data$Cluster_gene[is.na(clinical.data$Cluster_gene)] <- "Other"
+
+
 
 
 clinical.data$Patient_Status <- ifelse(clinical.data$PATIENT_ID %in% common, 1, 2)
@@ -173,8 +175,8 @@ library("SummarizedExperiment")
 
 clinical.data$deceased = clinical.data$OS_STATUS == "1:DECEASED"
 
-Surv(clinical.data$OS_MONTHS, clinical.data$deceased) ~ Cluster
-fit_new = survfit(Surv(OS_MONTHS, deceased) ~ Cluster, data=clinical.data)
+Surv(clinical.data$OS_MONTHS, clinical.data$deceased) ~ Cluster_gene
+fit_new = survfit(Surv(OS_MONTHS, deceased) ~ Cluster_gene, data=clinical.data)
 ggsurvplot(fit_new, data=clinical.data, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Analysis of Clusters", xlab = "Time (Months)")
 ```
 

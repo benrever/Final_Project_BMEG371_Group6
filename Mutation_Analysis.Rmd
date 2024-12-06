@@ -3,20 +3,116 @@ output: pdf_document
 ---
 
 ```{r}
-rmarkdown::render("Cleaning_Data.Rmd")
-load("cleaning_data.RData")
+raw.clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", 
+                                    header = TRUE)
+raw.data.mutations <- read.table("data_mutations.txt", sep = "\t", 
+                                 header = TRUE)
+raw.data.RNAseq <- read.csv("RNAseq_BRCA.csv", row.names=1)
 
-data <- filtered.mutations
+#Filter data where you only have 0 or 1 read count across all samples.
+raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
+```
+
+```{r message=FALSE}
+simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+})
+
+colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
+  segments <- strsplit(name, "\\.")[[1]]
+  paste(segments[1:3], collapse = "-")
+}))
+```
+
+```{r}
+#Unique Patients in each data set 
+unique.clinical <- as.data.frame(unique(raw.clinical.patients$PATIENT_ID))
+unique.mutations <- as.data.frame(unique
+                                  (raw.data.mutations$Tumor_Sample_Barcode))
+unique.RNA <- as.data.frame(colnames(raw.data.RNAseq[,1:length(raw.data.RNAseq)]))
+
+#Addition patient ID's to Mutation data 
+mutation.patients <- as.data.frame(raw.data.mutations$Tumor_Sample_Barcode)
+colnames(mutation.patients) <- "Patient_ID"
+mutation.patients$Patient_ID <- substr(mutation.patients$Patient_ID, 1, 12)
+raw.data.mutations <- cbind(mutation.patients, raw.data.mutations)
+
+colnames(unique.clinical) <- "Patient_ID"
+colnames(unique.mutations) <- "Patient_ID"
+colnames(unique.RNA) <- "Patient_ID"
+unique.mutations$Patient_ID <- substr(unique.mutations$Patient_ID, 1, 12)
+
+#Finding common patients
+common_patient_ids <- Reduce(intersect, list(
+  unique.clinical$Patient_ID,
+  unique.mutations$Patient_ID,
+  unique.RNA$Patient_ID
+))
+
+#3 data sets with all 975 common patients
+clinical.data <- raw.clinical.patients[raw.clinical.patients$PATIENT_ID 
+                                        %in% common_patient_ids, ]
+mutation.data <- raw.data.mutations[raw.data.mutations$Patient_ID 
+                                    %in% common_patient_ids, ]
+seq.data <- raw.data.RNAseq[,names(raw.data.RNAseq)
+                            %in% clinical.data$PATIENT_ID]
 ```
 
 ```{r}
 library(ggplot2)
-library(pheatmap)
 
-table(data$Variant_Classification)
-ggplot(data=var.class, aes(x=Var1, y=Freq))+
-  geom_col()+
-  theme(axis.text.x = element_text(angle = 45,hjust=1))
+data_counts_mutation <- data.frame(table(mutation.data$Hugo_Symbol))
+colnames(data_counts_mutation) <- c("Gene", "Count")
+data_counts_mutation$Percentage <- round((data_counts_mutation$Count / 
+                                            sum(data_counts_mutation$Count)) * 100, 4)
 
+top_50_mutations <- data_counts_mutation[order(data_counts_mutation$Count, 
+                                       decreasing = TRUE), ][1:40, ]
+
+# Reorder the gene factor for the top 50
+top_50_mutations$Gene <- factor(top_50_mutations$Gene, 
+                                    levels = top_50_mutations$Gene
+                                    [order(top_50_mutations$Count, 
+                                           decreasing = TRUE)])
+
+ggplot(top_50_mutations, aes(x = Gene, y=Count)) +
+  geom_bar(stat="identity", fill = "steelblue") +
+  labs(title = "Gene Mutations", x = "Gene", y = "Count") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+
+clinical.data$deceased = clinical.data$OS_STATUS == "1:DECEASED"
+
+filtered_mutations <- mutation.data[mutation.data$Hugo_Symbol %in% top_50_mutations$Gene[1:5], ]
+
+
+clinical_info <- clinical.data[, c("PATIENT_ID", "OS_MONTHS", "deceased")]
+
+colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "PATIENT_ID"
+
+# Merge the filtered mutations with the clinical data based on Patient_ID
+merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x = TRUE)
+
+
+Surv(merged_data$OS_MONTHS, merged_data$deceased) ~ merged_data$Hugo_Symbol
+fit = survfit(Surv(OS_MONTHS, deceased) ~ Hugo_Symbol, data=merged_data)
+
+ggsurvplot(fit, data=merged_data, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Mutation Type", xlab = "Time (Months)")
+```
+
+
+```{r}
+clinical_info$Group <- ifelse(clinical_info$PATIENT_ID %in% 
+                                merged_data$PATIENT_ID, "Top 1-5 Genes", "Other Genes")
+
+Surv(clinical_info$OS_MONTHS, clinical_info$deceased) ~ Group
+fit = survfit(Surv(OS_MONTHS, deceased) ~ Group, data=clinical_info)
+
+ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Top 5 Mutated Genes", xlab = "Time (Months)")
 ```
 

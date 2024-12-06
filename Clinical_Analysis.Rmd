@@ -216,3 +216,6 @@ Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$PERSON_NEOPLASM_CANCER_STATU
 fit_comb = survfit(Surv(OS_MONTHS, deceased) ~ clin_df$PERSON_NEOPLASM_CANCER_STATUS + clin_df$SUBTYPE, data=clin_df)
 ggsurvplot(fit_comb, data=clin_df, pval=T, legend = "bottom",legend.labs = c("TF: Basal", "TF: Her2", "TF: LumA","TF: LumB","TF: Normal","WT: Basal", "WT: Her2", "WT: LumA","WT: LumB","WT: Normal"), title = "Comparing subtype to tumor free(TF) and with tumor (WT)", xlab = "Time (Months)")
 ```
+
+```{}
+```
