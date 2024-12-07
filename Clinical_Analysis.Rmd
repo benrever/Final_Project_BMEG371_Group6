@@ -223,16 +223,19 @@ stage_survival_plot <- ggsurvplot(fit, data=clin_df, pval=T, risk.table=T, risk.
 
 stage_survival_plot$plot <- stage_survival_plot$plot +
   theme(
-    plot.title = element_text(size = 23),  # Title size
-    legend.text = element_text(size = 15),               # Legend text size
-    legend.title = element_text(size = 15)               # Legend title size
-  )
+    plot.title = element_text(size = 21),  # Title size
+    legend.text = element_text(size = 12),               # Legend text size
+    legend.title = element_text(size = 12)               # Legend title size
+  )+
+  labs(color = NULL, fill = NULL, linetype = NULL)
 stage_survival_plot$table <- stage_survival_plot$table +
   theme(legend.position = "none")
 
-combined_plot <- grid.arrange(stage_survival_plot$plot, stage_survival_plot$table, ncol = 1, heights = c(2, 1))
+summary(fit, time =120)
 
-ggsave("stage_survival_plot.png", combined_plot, width = 14, height = 6)
+combined_plot_stage <- grid.arrange(stage_survival_plot$plot, stage_survival_plot$table, ncol = 1, heights = c(2, 1))
+
+ggsave("stage_survival_plot.png", combined_plot_stage, width = 14, height = 6)
 ```
 
 ```{r}
@@ -268,18 +271,25 @@ fit_subtype = survfit(Surv(OS_MONTHS, deceased) ~ SUBTYPE, data=clin_df)
 
 subtype_survival_plot <- ggsurvplot(fit_subtype, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("BRCA_Basal", "BRCA_Her2", "BRCA_LumA", "BRCA_LumB", "BRCA_Normal"), title= "Survival Analysis of Cancer Subtype", xlab = "Time (Months)")
 
+summary(fit_subtype, time =120)
+
 subtype_survival_plot$plot <- subtype_survival_plot$plot +
   theme(
-    plot.title = element_text(size = 23),  # Title size
-    legend.text = element_text(size = 15),               # Legend text size
-    legend.title = element_text(size = 15)               # Legend title size
-  )
+    plot.title = element_text(size = 21),  # Title size
+    legend.text = element_text(size = 10),               # Legend text size
+    legend.title = element_text(size = 10)               # Legend title size
+  )+
+  labs(color = NULL, fill = NULL, linetype = NULL)
 subtype_survival_plot$table <- subtype_survival_plot$table +
   theme(legend.position = "none")
 
-combined_plot <- grid.arrange(subtype_survival_plot$plot, subtype_survival_plot$table, ncol = 1, heights = c(2, 1))
+combined_plot_subtype <- grid.arrange(subtype_survival_plot$plot, subtype_survival_plot$table, ncol = 1, heights = c(2, 1))
 
-ggsave("subtype_survival_plot.png", combined_plot, width = 14, height = 6)
+ggsave("stage_survival_plot.png", combined_plot_subtype, width = 14, height = 6)
+
+combined_plot_stage_Stubtype <- grid.arrange(combined_plot_stage, combined_plot_subtype, ncol = 2)
+
+ggsave("combined_plot_stage_Stubtype.png", combined_plot_stage_Stubtype, width = 16, height = 6)
 ```
 
 ```{r}
