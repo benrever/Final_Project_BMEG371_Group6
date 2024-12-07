@@ -13,11 +13,6 @@ raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
 ```
 
 ```{r message=FALSE}
-simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
-  segments <- strsplit(name, "\\.")[[1]]
-  paste(segments[1:3], collapse = "-")
-})
-
 colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
   segments <- strsplit(name, "\\.")[[1]]
   paste(segments[1:3], collapse = "-")
@@ -83,8 +78,9 @@ data_counts_sex$Percentage <- round((data_counts_sex$Count / sum(data_counts_sex
 p1 <- ggplot(data_counts_sex, aes(x = "", y = Count, fill = SEX)) +
   geom_bar(stat = "identity", width = 1) +  
   coord_polar(theta = "y") +
-  labs(title = "Distribution of Sex", fill = "Sex") +
+  labs(title = "Distribution of Sex", fill = "Sex", size = 22) +
   theme_void() +  # Remove gridlines and axes
+  theme(plot.title = element_text(size = 20)) + 
   geom_text(aes(label = paste(Count, "(", Percentage, "%)", sep = "")), 
             position = position_stack(vjust = 0.5)) 
 
@@ -96,8 +92,9 @@ data_counts_race$Percentage <- round((data_counts_race$Count / sum(data_counts_r
 p2 <- ggplot(data_counts_race, aes(x = "", y = Count, fill = RACE)) +
   geom_bar(stat = "identity", width = 1) +  # Create bars (used for pie chart)
   coord_polar(theta = "y") +  # Convert to pie chart
-  labs(title = "Distribution of Race", fill = "Race") +
+  labs(title = "Distribution of Race", fill = "Race", size = 22) +
   theme_void() +  # Remove gridlines and axes
+  theme(plot.title = element_text(size = 20)) + 
   geom_text(aes(label = ifelse(RACE %in% "White", 
                                paste(Count, "(", Percentage, "%)", sep = ""),
                                "")), 
@@ -106,35 +103,42 @@ p2 <- ggplot(data_counts_race, aes(x = "", y = Count, fill = RACE)) +
 # Plot 3: Bar plot for SUBTYPE
 p3 <- ggplot(data, aes(x = SUBTYPE)) +
   geom_bar(fill = "lightcoral") +
-  labs(title = "Cancer Subtypes", x = "Subtype", y = "Count") +
+  labs(title = "Cancer Subtypes", x = "Subtype", y = "Count", size = 22) +
   theme_minimal()+
+  theme(plot.title = element_text(size = 20)) + 
   theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
 # Plot 4: Histogram for AGE
 p4 <- ggplot(data, aes(x = AGE)) +
   geom_histogram(binwidth = 5, fill = "lightgray", color = "black") +
   geom_vline(aes(xintercept = mean(data$AGE)), color = "red", size = 1) +  # Mean line
-  geom_text(aes(x = 37, y = 145, label = paste("mean: ", round(mean(data$AGE), 2))), 
-            color = "red", vjust = -0.5, size = 3) +  # Add text for the mean
-  labs(title = "Distribution of Age", x = "Age", y = "Frequency") +
-  theme_minimal()
+  geom_text(aes(x = 37, y = 130, label = paste("mean: ", round(mean(data$AGE), 2)), size = 8), 
+            color = "red", vjust = -0.5) +  # Add text for the mean
+  labs(title = "Distribution of Age", x = "Age", y = "Frequency", size = 22) +
+  theme_minimal()+
+theme(plot.title = element_text(size = 20)) 
 
 # Plot 5: Barplot for Genetic Ancestry
 p5 <- ggplot(data, aes(x = GENETIC_ANCESTRY_LABEL)) +
   geom_bar(fill = "magenta") +
-  labs(title = "Genetic Ancestry", x = "Genetic Ancestry", y = "Count") +
+  labs(title = "Genetic Ancestry", x = "Genetic Ancestry", y = "Count", size = 20) +
   theme_minimal()+
+  theme(plot.title = element_text(size = 20)) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # Plot 6: Barplot for Tumor Stage
 p6 <- ggplot(data, aes(x = AJCC_PATHOLOGIC_TUMOR_STAGE)) +
   geom_bar(fill = "purple") +
-  labs(title = "Tumor Stage", x = "Tumor Stage", y = "Count") +
+  labs(title = "Tumor Stage", x = "Tumor Stage", y = "Count", size = 18) +
   theme_minimal()+
+  theme(plot.title = element_text(size = 20)) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # Arrange all plots in a 3x3 grid
-grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 2, ncol = 3)
+patient_data <- grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 2, ncol = 3)
+
+ggsave("patient_data.png", plot = patient_data, width = 16, height = 8)
+
 
 ```
 
@@ -153,10 +157,13 @@ data_counts_survival$Percentage <- round((data_counts_survival$Count / sum(data_
 p7 <- ggplot(data_counts_survival, aes(x = "", y = Count, fill = Status)) +
   geom_bar(stat = "identity", width = 1) +  # Create bars (used for pie chart)
   coord_polar(theta = "y") +  # Convert to pie chart
-  labs(title = "Overal Survival Status", fill = "Status") +
+  labs(title = "Overal Survival Status", fill = "Status", ) +
   theme_void() +  # Remove gridlines and axes
+  theme(plot.title = element_text(size = 28),
+        legend.text = element_text(size = 25),               # Increase legend text size
+    legend.title = element_text(size = 28)) + 
   geom_text(aes(label = paste(Count, "(", Percentage, "%)", sep = "")), 
-            position = position_stack(vjust = 0.5)) 
+            position = position_stack(vjust = 0.5), size = 10) 
 
 
 library(dbplyr)
@@ -171,10 +178,15 @@ p8 <- ggplot(data_counts_free, aes(x = "", y = Count, fill = Status)) +
   coord_polar(theta = "y") +  # Convert to pie chart
   labs(title = "Living Status", fill = "Status") +
   theme_void() +  # Remove gridlines and axes
+  theme(plot.title = element_text(size = 28),
+        legend.text = element_text(size = 25),               # Increase legend text size
+    legend.title = element_text(size = 28)) + 
   geom_text(aes(label = paste(Count, "(", Percentage, "%)", sep = "")), 
-            position = position_stack(vjust = 0.5)) 
+            position = position_stack(vjust = 0.5),size = 10) 
 
-grid.arrange(p7, p8, nrow = 1, ncol = 2)
+Status_Plot <- grid.arrange(p7, p8, nrow = 1, ncol = 2)
+
+ggsave("Status_Plot.png", plot = Status_Plot, width = 16, height = 6)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
@@ -207,7 +219,20 @@ clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE = gsub("[ABC]$", "", clin_df$AJCC_PATHOLOGIC
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$AJCC_PATHOLOGIC_TUMOR_STAGE
 fit = survfit(Surv(OS_MONTHS, deceased) ~ AJCC_PATHOLOGIC_TUMOR_STAGE, data=clin_df)
 
-ggsurvplot(fit, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("Stage: I", "Stage: II", "Stage: III", "Stage: IV", "Stage: X"), title = "Survival Anlaysis of Cancer Stage", xlab = "Time (Months)")
+stage_survival_plot <- ggsurvplot(fit, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("Stage: I", "Stage: II", "Stage: III", "Stage: IV", "Stage: X"), title = "Survival Anlaysis of Cancer Stage", xlab = "Time (Months)")
+
+stage_survival_plot$plot <- stage_survival_plot$plot +
+  theme(
+    plot.title = element_text(size = 23),  # Title size
+    legend.text = element_text(size = 15),               # Legend text size
+    legend.title = element_text(size = 15)               # Legend title size
+  )
+stage_survival_plot$table <- stage_survival_plot$table +
+  theme(legend.position = "none")
+
+combined_plot <- grid.arrange(stage_survival_plot$plot, stage_survival_plot$table, ncol = 1, heights = c(2, 1))
+
+ggsave("stage_survival_plot.png", combined_plot, width = 14, height = 6)
 ```
 
 ```{r}
@@ -231,6 +256,8 @@ table(clin_df$age_group)
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$age_group
 fit_age = survfit(Surv(OS_MONTHS, deceased) ~ age_group, data=clin_df)
 ggsurvplot(fit_age, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("20-40", "40-60", "60-80", "80+"), title = "Survival Anlysis of Age", xlab = "Time (Months)")
+
+
 ```
 
 ```{r}
@@ -239,7 +266,20 @@ clin_df[which(clin_df$SUBTYPE == "N/A"), "SUBTYPE"] = NA
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$SUBTYPE
 fit_subtype = survfit(Surv(OS_MONTHS, deceased) ~ SUBTYPE, data=clin_df)
 
-ggsurvplot(fit_subtype, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("BRCA_Basal", "BRCA_Her2", "BRCA_LumA", "BRCA_LumB", "BRCA_Normal"), title= "Survival Analysis of Cancer Subtype", xlab = "Time (Months)")
+subtype_survival_plot <- ggsurvplot(fit_subtype, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, legend.labs = c("BRCA_Basal", "BRCA_Her2", "BRCA_LumA", "BRCA_LumB", "BRCA_Normal"), title= "Survival Analysis of Cancer Subtype", xlab = "Time (Months)")
+
+subtype_survival_plot$plot <- subtype_survival_plot$plot +
+  theme(
+    plot.title = element_text(size = 23),  # Title size
+    legend.text = element_text(size = 15),               # Legend text size
+    legend.title = element_text(size = 15)               # Legend title size
+  )
+subtype_survival_plot$table <- subtype_survival_plot$table +
+  theme(legend.position = "none")
+
+combined_plot <- grid.arrange(subtype_survival_plot$plot, subtype_survival_plot$table, ncol = 1, heights = c(2, 1))
+
+ggsave("subtype_survival_plot.png", combined_plot, width = 14, height = 6)
 ```
 
 ```{r}
@@ -273,5 +313,3 @@ fit_comb = survfit(Surv(OS_MONTHS, deceased) ~ clin_df$PERSON_NEOPLASM_CANCER_ST
 ggsurvplot(fit_comb, data=clin_df, pval=T, legend = "bottom",legend.labs = c("TF: Basal", "TF: Her2", "TF: LumA","TF: LumB","TF: Normal","WT: Basal", "WT: Her2", "WT: LumA","WT: LumB","WT: Normal"), title = "Comparing subtype to tumor free(TF) and with tumor (WT)", xlab = "Time (Months)")
 ```
 
-```{}
-```

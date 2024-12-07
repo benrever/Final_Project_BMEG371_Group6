@@ -14,11 +14,6 @@ raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
 ```
 
 ```{r message=FALSE}
-simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
-  segments <- strsplit(name, "\\.")[[1]]
-  paste(segments[1:3], collapse = "-")
-})
-
 colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
   segments <- strsplit(name, "\\.")[[1]]
   paste(segments[1:3], collapse = "-")
@@ -61,6 +56,7 @@ seq.data <- raw.data.RNAseq[,names(raw.data.RNAseq)
 
 ```{r}
 library(ggplot2)
+library(gridExtra)
 
 data_counts_mutation <- data.frame(table(mutation.data$Hugo_Symbol))
 colnames(data_counts_mutation) <- c("Gene", "Count")
@@ -103,6 +99,7 @@ grid.arrange(plt1, plt2, nrow = 1)
 
 
 ```{r}
+library(pheatmap)
 cnv_events = unique(mutation.data$Variant_Classification)
 oncomat = reshape2::dcast(
   data = mutation.data,
@@ -135,7 +132,6 @@ oncomat = reshape2::dcast(
   fill = '',
   drop = FALSE
 )
-library(pheatmap)
 rownames(oncomat) = oncomat$Hugo_Symbol
 oncomat <- oncomat[,-1]
 hugo <- as.data.frame(table(mutation.data$Hugo_Symbol))
@@ -147,11 +143,12 @@ mat <- apply(mat, 2 ,as.numeric)
 mat <- as.matrix(mat)
 rownames(mat)  <-  row.names(oncomat.ordered)
 reduce.mat <- mat[1:4,]
+
 res <- pheatmap(reduce.mat,
          cluster_rows = F,
          show_colnames=FALSE)
 
-cluster <-  as.data.frame(cutree(res$tree_col, k = 2))
+cluster <- as.data.frame(cutree(res$tree_col,k = 2))
 ```
 
 
@@ -300,5 +297,28 @@ fit = survfit(Surv(OS_MONTHS, deceased) ~ Forth_top_gene , data=clinical_info)
 
 ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Top 5 Mutated Genes", xlab = "Time (Months)")
 ```
+
+
+
+#TTN
+
+```{r}
+
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

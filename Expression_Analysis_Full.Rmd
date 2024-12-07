@@ -16,15 +16,12 @@ raw.data.RNAseq <- raw.data.RNAseq[rowSums(raw.data.RNAseq)>1,]
 ```
 
 ```{r message=FALSE}
-simplified_names <- sapply(colnames(raw.data.RNAseq), function(name) {
-  segments <- strsplit(name, "\\.")[[1]]
-  paste(segments[1:3], collapse = "-")
-})
-
 colnames(raw.data.RNAseq) <- make.unique(sapply(colnames(raw.data.RNAseq), function(name) {
   segments <- strsplit(name, "\\.")[[1]]
   paste(segments[1:3], collapse = "-")
 }))
+
+rownames(seq.data) <- substr(rownames(seq.data),1 , 15)
 ```
 
 ```{r}
@@ -102,7 +99,6 @@ hclust_results <- hclust(dist_matrix, method = "ward.D2")
 plot(hclust_results, labels = FALSE)
 
 
-
 Heatmap(
   filtered_data,
   name = "Expression",
@@ -116,9 +112,8 @@ Heatmap(
 
 ```{r}
 # Add cluster information to clinical data
-cut_clusters <- cutree(hclust_results, k = 4)
+cut_clusters <- cutree(hclust_results, k = 2)
 clinical.data$Cluster <- cut_clusters[match(clinical.data$PATIENT_ID, names(cut_clusters))]
-
 
 pca_res <- prcomp(t(filtered_data))
 score <- pca_res$x
@@ -126,45 +121,15 @@ score <- pca_res$x
 score = as.data.frame(score)
 score$color <- clinical.data$Cluster[match(rownames(score), clinical.data$PATIENT_ID)]
 
-ggplot(score, aes(x=PC1, y=PC2,  color=color)) + 
-  geom_point(size = 4)
+table(score$color)
 
-#Create subclusters if wanted 
-clinical.data$subcluster <- clinical.data$Cluster[ifelse((clinical.data$Cluster == 4), 2, 1)] # Change groups 
-
-table(clinical.data$AJCC_PATHOLOGIC_TUMOR_STAGE)
+ggplot(score, aes(x=PC1, y=PC2, color=factor(color))) + 
+  geom_point(size = 3) +
+  scale_color_manual(values = c("red", "blue", "green", "orange", "purple"), 
+                     labels = c("Cluster 1", "Cluster 2", "Clutser 3", "Clutser 4")) +
+  labs(color = "Cluster")
 ```
 
-```{r}
-mutation.patients <- mutation.data[mutation.data$Hugo_Symbol %in% c("TP53", "PIK3CA", "TTN"), ]
-
-mutation.patients$Cluster_gene <- ifelse(mutation.patients$Hugo_Symbol == "TP53", 1,
-                             ifelse(mutation.patients$Hugo_Symbol == "TTN", 2,
-                             ifelse(mutation.patients$Hugo_Symbol == "PIK3CA", 3, "Other")))
-table(mutation.patients$Cluster)
-
-common <- intersect(mutation.patients$Patient_ID, clinical.data$PATIENT_ID)
-
-# Use aggregate to ensure one patient can be assigned a single cluster
-patient_clusters <- aggregate(Cluster_gene ~ Patient_ID, data = mutation.patients, FUN = function(x) x[1])
-
-# Merge clusters into clinical data
-clinical.data <- merge(clinical.data, patient_clusters, by.x = "PATIENT_ID", by.y = "Patient_ID", all.x = TRUE)
-
-# Fill non-mutated patients with a default cluster, e.g., 3
-clinical.data$Cluster_gene[is.na(clinical.data$Cluster_gene)] <- "Other"
-
-
-
-
-clinical.data$Patient_Status <- ifelse(clinical.data$PATIENT_ID %in% common, 1, 2)
-
-clinical.data$tp <- clinical.data$PATIENT_ID[ifelse((clinical.data$PATIENT_ID), 2, 1)] # Change groups 
-
-table(clinical.data$Patient_Status)
-
-genes <- as.data.frame(mutation.patients$Gene)
-```
 
 
 ```{r}
@@ -175,15 +140,17 @@ library("SummarizedExperiment")
 
 clinical.data$deceased = clinical.data$OS_STATUS == "1:DECEASED"
 
-Surv(clinical.data$OS_MONTHS, clinical.data$deceased) ~ Cluster_gene
-fit_new = survfit(Surv(OS_MONTHS, deceased) ~ Cluster_gene, data=clinical.data)
+Surv(clinical.data$OS_MONTHS, clinical.data$deceased) ~ Cluster
+fit_new = survfit(Surv(OS_MONTHS, deceased) ~ Cluster, data=clinical.data)
 ggsurvplot(fit_new, data=clinical.data, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Analysis of Clusters", xlab = "Time (Months)")
 ```
 
 ```{r}
 # Expression analysis on all genes with clusters as conditon
 
-clinical.data$Cluster <- factor(clinical.data$Cluster)
+clinical.data$Cluster <- factor(clinical.data$Cluster, levels = c(2, 1, 3, 4))
+
+levels(clinical.data$Cluster)
 
 dds_clus <- DESeqDataSetFromMatrix(
   countData = seq.data,
@@ -193,7 +160,17 @@ dds_clus <- DESeqDataSetFromMatrix(
 
 dds_clus <- DESeq(dds_clus)
 
-res <- results(dds_clus, contrast = c("Cluster", 1, 4))
+norm_count_clus <- counts(dds_clus, normalized = TRUE)
+
+log_norm_counts_clus <- log2(norm_count_clus + 1)
+
+#Find most variable genes
+gene_variance_clus <- apply(log_norm_counts_clus, 1, var)
+
+# Select top 1000 most variable genes
+top_genes_clus <- names(sort(gene_variance_clus, decreasing = TRUE)[1:1000])
+
+res <- results(dds_clus, contrast = c("Cluster", "4","1"))
 
 resultsNames(dds_clus)
 
@@ -215,7 +192,7 @@ summary(res.order)
 sig_genes <- sort(subset(res, padj < 0.05), decreasing = TRUE)[1:1000,]
 head(sig_genes)
 
-plotCounts(dds_clus, gene="ENSG00000110484.7", intgroup="Cluster")
+plotCounts(dds_clus, gene=which.min(res$padj), intgroup="Cluster")
 ```
 
 ```{r}
@@ -240,10 +217,10 @@ de_gene_counts <- log_norm_counts[rownames(sig_genes), ]
 Heatmap(
   de_gene_counts,
   name = "Expression",
-  cluster_rows = TRUE,
+  cluster_rows = FALSE,
   cluster_columns = TRUE,
   show_column_names = FALSE,
-  show_row_names = TRUE
+  show_row_names = FALSE
 )
 ```
 
@@ -272,16 +249,48 @@ ggplot(score, aes(x=PC1, y=PC2,  color=color)) +
   geom_point(size = 4)
 ```
 ```{r}
+sampleDists = dist(t(assay(vsd)),upper = TRUE)
 
-rownames(seq.data) <- gsub("\\..*", "", rownames(seq.data))
+annot_col = data.frame(clinical.data$Cluster)
+row.names(annot_col) <- rownames(clinical.data)
 
-head(rownames(seq.data))
+sampleDistMatrix = as.matrix( sampleDists )
+rownames(sampleDistMatrix) = colnames(seq.data)
+colnames(sampleDistMatrix) = colnames(seq.data)
 
-which(mutation.data$Gene == "ENSG00000000003")
-
-which(rownames(seq.data) == "ENSG00000000003")
-
-head(rownames(seq.data))
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         cluster_rows=FALSE, show_rownames=FALSE,
+         show_colnames = FALSE,
+         cluster_cols=FALSE,
+         annotation_col=annot_col)
 ```
 
+```{r}
+mutation.patients <- mutation.data[mutation.data$Hugo_Symbol %in% c("TP53", "PIK3CA", "TTN"), ]
 
+mutation.patients$Cluster_gene <- ifelse(mutation.patients$Hugo_Symbol == "TP53", 1,
+                             ifelse(mutation.patients$Hugo_Symbol == "TTN", 2,
+                             ifelse(mutation.patients$Hugo_Symbol == "PIK3CA", 3, "Other")))
+
+common <- intersect(mutation.patients$Patient_ID, clinical.data$PATIENT_ID)
+
+# Use aggregate to ensure one patient can be assigned a single cluster
+patient_clusters <- aggregate(Cluster_gene ~ Patient_ID, data = mutation.patients, FUN = function(x) x[1])
+
+# Merge clusters into clinical data
+clinical.data <- merge(clinical.data, patient_clusters, by.x = "PATIENT_ID", by.y = "Patient_ID", all.x = TRUE)
+
+# Fill non-mutated patients with a default cluster, e.g., 3
+clinical.data$Cluster_gene[is.na(clinical.data$Cluster_gene)] <- "Other"
+
+
+clinical.data$Patient_Status <- ifelse(clinical.data$PATIENT_ID %in% common, 1, 2)
+
+clinical.data$tp <- clinical.data$PATIENT_ID[ifelse((clinical.data$PATIENT_ID), 2, 1)] # Change groups 
+
+table(clinical.data$Patient_Status)
+
+genes <- as.data.frame(mutation.patients$Gene)
+```   
