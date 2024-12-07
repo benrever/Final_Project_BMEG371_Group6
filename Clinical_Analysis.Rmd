@@ -227,7 +227,7 @@ clin_df$age_group <- cut(clin_df$AGE,
                          breaks = c(20, 40, 60, 80, Inf),  # Define breakpoints
                          labels = c("20-40", "40-60", "60-80", "80+"),  # Define labels
                          right = TRUE)  # Include upper bound in each range
-table(clin_df$age_group)
+table(clin_df$age_group) 
 Surv(clin_df$OS_MONTHS, clin_df$deceased) ~ clin_df$age_group
 fit_age = survfit(Surv(OS_MONTHS, deceased) ~ age_group, data=clin_df)
 ggsurvplot(fit_age, data=clin_df, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35,legend.labs = c("20-40", "40-60", "60-80", "80+"), title = "Survival Anlysis of Age", xlab = "Time (Months)")

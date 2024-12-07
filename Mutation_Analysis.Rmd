@@ -206,7 +206,7 @@ ggsurvplot(fit, data=unique_merged_data, pval=T, risk.table=T, risk.table.col="s
 
 filtered_mutations <- mutation.data[mutation.data$Hugo_Symbol %in% top_50_mutations$Gene[1:5], ]
 
-colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "PATIENT_ID"
+colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "PATIENT_ID" 
 
 # Merge the filtered mutations with the clinical data based on Patient_ID
 merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x = TRUE)
