@@ -85,6 +85,32 @@ ggplot(top_50_mutations, aes(x = Gene, y=Count)) +
 ```
 
 ```{r}
+# Perform Kruskal-Wallis test to check if mutation counts differ between genes
+kruskal_test <- kruskal.test(Count ~ Gene, data = top_50_mutations)
+
+# Perform ANOVA to check if mutation counts differ between genes
+anova_test <- aov(Count ~ Gene, data = top_50_mutations)
+
+# Display the results
+summary(anova_test)
+
+library(ggpubr)
+
+# Boxplot to show the distribution of counts for each gene
+ggplot(top_50_mutations, aes(x = Gene, y = Count)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  stat_compare_means(method = "kruskal.test", ) +  # Add p-values using Kruskal-Wallis test
+  labs(title = "Gene Mutation Counts by Gene", x = "Gene", y = "Mutation Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate gene names for readability
+
+
+```
+
+
+
+
+```{r}
 
 clinical.data$deceased = clinical.data$OS_STATUS == "1:DECEASED"
 
