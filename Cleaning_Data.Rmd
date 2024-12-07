@@ -2,7 +2,7 @@
 output: pdf_document
 ---
 
-### Reading and Cleaning Data
+### Reading and Cleaning Data for all data sets
 
 ```{r}
 raw.clinical.patients <- read.table("data_clinical_patient.txt", sep = "\t", 
@@ -39,7 +39,7 @@ colnames(unique.clinical) <- "Patient_ID"
 colnames(unique.mutations) <- "Patient_ID"
 colnames(unique.RNA) <- "Patient_ID"
 unique.mutations$Patient_ID <- substr(unique.mutations$Patient_ID, 1, 12)
-
+ 
 #Finding common patients
 common_patient_ids <- Reduce(intersect, list(
   unique.clinical$Patient_ID,
