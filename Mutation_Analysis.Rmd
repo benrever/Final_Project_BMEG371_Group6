@@ -68,7 +68,7 @@ data_counts_mutation$Percentage <- round((data_counts_mutation$Count /
                                             sum(data_counts_mutation$Count)) * 100, 4)
 
 top_50_mutations <- data_counts_mutation[order(data_counts_mutation$Count, 
-                                       decreasing = TRUE), ][1:50, ]
+                                       decreasing = TRUE), ][1:40, ]
 
 
 
@@ -170,6 +170,11 @@ fit = survfit(Surv(OS_MONTHS, deceased) ~ cluster, data=clinical_info)
 
 ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Mutation Type", xlab = "Time (Months)")
 
+summary_fit <- summary(fit, times =60)
+
+# Display survival probabilities for each cluster
+print(summary_fit$surv)
+
 ```
 
 ```{r}
@@ -186,13 +191,16 @@ colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "P
 # Merge the filtered mutations with the clinical data based on Patient_ID
 merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x = TRUE)
 
+unique_merged_data <- merged_data %>%
+  distinct(PATIENT_ID, Hugo_Symbol, .keep_all = TRUE)
 
-Surv(merged_data$OS_MONTHS, merged_data$deceased) ~ merged_data$Hugo_Symbol
-fit = survfit(Surv(OS_MONTHS, deceased) ~ Hugo_Symbol, data=merged_data)
+table(unique_merged_data$Hugo_Symbol)
 
-ggsurvplot(fit, data=merged_data, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Mutation Type", xlab = "Time (Months)")
+Surv(unique_merged_data$OS_MONTHS, unique_merged_data$deceased) ~ unique_merged_data$Hugo_Symbol
+fit = survfit(Surv(OS_MONTHS, deceased) ~ Hugo_Symbol, data=unique_merged_data)
+
+ggsurvplot(fit, data=unique_merged_data, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Mutation Type", xlab = "Time (Months)")
 ```
-
 
 ```{r}
 
@@ -215,6 +223,8 @@ ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata
 ```{r}
 filtered_mutations <- mutation.data[mutation.data$Hugo_Symbol %in% top_50_mutations$Gene[1], ]
 
+table(filtered_mutations[, c("PATIENT_ID", "Hugo_Symbol")])
+
 colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "PATIENT_ID"
 
 # Merge the filtered mutations with the clinical data based on Patient_ID
@@ -223,10 +233,21 @@ merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x
 clinical_info$Top_gene <- ifelse(clinical_info$PATIENT_ID %in% 
                                 merged_data$PATIENT_ID, merged_data$Hugo_Symbol, "Other")
 
+
 Surv(clinical_info$OS_MONTHS, clinical_info$deceased) ~ Top_gene
 fit = survfit(Surv(OS_MONTHS, deceased) ~ Top_gene, data=clinical_info)
 
 ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Top 5 Mutated Genes", xlab = "Time (Months)")
+```
+
+```{r}
+subgroup <- clinical_info[clinical_info$Top_gene == "TTN" & clinical_info$Subtype != ""
+                          & !is.na(clinical_info$Subtype),]
+
+Surv(subgroup$OS_MONTHS, subgroup$deceased) ~ Top_gene + Subtype
+fit = survfit(Surv(OS_MONTHS, deceased) ~ Top_gene+ Subtype, data=subgroup)
+
+ggsurvplot(fit, data=subgroup, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Top 5 Mutated Genes", xlab = "Time (Months)")
 ```
 
 ```{r}
@@ -262,6 +283,7 @@ fit = survfit(Surv(OS_MONTHS, deceased) ~ Third_top_gene , data=clinical_info)
 
 ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Top 5 Mutated Genes", xlab = "Time (Months)")
 ```
+
 ```{r}
 filtered_mutations <- mutation.data[mutation.data$Hugo_Symbol %in% top_50_mutations$Gene[4], ]
 
