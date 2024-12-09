@@ -64,8 +64,8 @@ data_counts_mutation$Percentage <- round((data_counts_mutation$Count /
                                             sum(data_counts_mutation$Count)) * 100, 4)
 
 top_50_mutations <- data_counts_mutation[order(data_counts_mutation$Count, 
-                                       decreasing = TRUE), ][1:40, ]
-
+                                       decreasing = TRUE), ][1:30, ]
+length(unique(mutation.data$Hugo_Symbol))
 
 
 # Reorder the gene factor for the top 50
@@ -74,25 +74,48 @@ top_50_mutations$Gene <- factor(top_50_mutations$Gene,
                                     [order(top_50_mutations$Count, 
                                            decreasing = TRUE)])
 
-ggplot(top_50_mutations, aes(x = Gene, y=Count)) +
+top_Mutations_plt <- ggplot(top_50_mutations, aes(x = Gene, y=Count)) +
   geom_bar(stat="identity", fill = "steelblue") +
-  labs(title = "Gene Mutations", x = "Gene", y = "Count") +
+  labs(title = "Top 30 Gene Variants", x = "Gene", y = "Count") +
   theme_minimal()+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(plot.title = element_text(size = 20)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),)
+
+ggsave("top_30_mutation.png", top_Mutations_plt, width = 8, height =6)
 
 ```
+
 ```{r}
- var.type <- as.data.frame(table(mutation.data$Variant_Type))
-plt1 <-ggplot(data=var.type, aes(x=Var1, y=Freq))+
-  geom_col( aes(fill=Var1))
+# Create data frame for Variant Type
+var.type <- as.data.frame(table(mutation.data$Variant_Type))
+var.type <- var.type[order(var.type$Freq, decreasing = TRUE), ]
+
+# Convert Var1 to a factor with levels in the desired order
+var.type$Var1 <- factor(var.type$Var1, levels = var.type$Var1)
+
+# Plot 1: Variant Type Distribution
+plt1 <- ggplot(data = var.type, aes(x = Var1, y = Freq)) +
+  geom_col(aes(fill = Var1), width = 0.7) +
+  labs(title = "Variant Type Distribution", x = "Variant Type", y = "Frequency") +
+  theme_minimal()+
+  theme(legend.position = "none")
+
+# Create data frame for Variant Classification
+var.class <- as.data.frame(table(mutation.data$Variant_Classification))
+
+# Plot 2: Top 10 Variants
+plt2 <- ggplot(data = var.class[var.class$Freq > 100, ], aes(x = Var1, y = Freq)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Top 10 Variants", x = "Variant Classification", y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
- var.class <- as.data.frame(table(mutation.data$Variant_Classification))
-plt2 <-ggplot(data=var.class[var.class$Freq > 100,], aes(x=Var1, y=Freq))+
-  geom_col()+
-  theme(axis.text.x = element_text(angle = 45,hjust=1))
+plt_var_class <- grid.arrange(plt1, plt2, nrow = 1)
 
-grid.arrange(plt1, plt2, nrow = 1)
+# Save Combined Plot
+ggsave("plt_var_class.png", plot = plt_var_class, width = 6, height = 4)
+
 ```
 
 
@@ -148,6 +171,8 @@ res <- pheatmap(reduce.mat,
          cluster_rows = F,
          show_colnames=FALSE)
 
+ggsave("Mutation_Heatmap.png", res$gtable, width = 7, height = 4)
+
 cluster <- as.data.frame(cutree(res$tree_col,k = 2))
 ```
 
@@ -165,7 +190,23 @@ clinical_info$cluster <- cluster$`cutree(res$tree_col, k = 2)`
 Surv(clinical_info$OS_MONTHS, clinical_info$deceased) ~ cluster
 fit = survfit(Surv(OS_MONTHS, deceased) ~ cluster, data=clinical_info)
 
-ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Mutation Type", xlab = "Time (Months)")
+mut_surve <- ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Mutation Type", xlab = "Time (Months)")
+
+mut_surve$plot <- mut_surve$plot +
+  theme(
+    plot.title = element_text(size = 21),  # Title size
+    legend.text = element_text(size = 12),               # Legend text size
+    legend.title = element_text(size = 12)               # Legend title size
+  ) + 
+  labs(color = NULL, fill = NULL, linetype = NULL)
+
+  mut_surve$table <- mut_surve$table
+  theme(legend.position = "none")
+
+
+combined_plot_mut <- grid.arrange(mut_surve$plot, mut_surve$table, ncol = 1, heights = c(2, 1))
+
+ggsave("Cluster_Heatmap.png", combined_plot_mut, width = 8, height = 6)
 
 summary_fit <- summary(fit, times =60)
 
@@ -175,6 +216,8 @@ print(summary_fit$surv)
 ```
 
 ```{r}
+
+library(dplyr)
 
 clinical.data$deceased = clinical.data$OS_STATUS == "1:DECEASED"
 
@@ -220,9 +263,44 @@ ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata
 ```{r}
 filtered_mutations <- mutation.data[mutation.data$Hugo_Symbol %in% top_50_mutations$Gene[1], ]
 
-table(filtered_mutations[, c("PATIENT_ID", "Hugo_Symbol")])
-
 colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "PATIENT_ID"
+
+# Merge the filtered mutations with the clinical data based on Patient_ID
+merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x = TRUE)
+
+
+clinical_info$Gene <- ifelse(clinical_info$PATIENT_ID %in% 
+                                merged_data$PATIENT_ID, merged_data$Hugo_Symbol, "Other")
+
+Surv(clinical_info$OS_MONTHS, clinical_info$deceased) ~ Gene
+fit = survfit(Surv(OS_MONTHS, deceased) ~ Gene, data=clinical_info)
+
+TTN_plot <- ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of TTN Gene Mutation", xlab = "Time (Months)")
+
+TTN_plot$plot <- TTN_plot$plot +
+  theme(
+    plot.title = element_text(size = 21),  # Title size
+    legend.text = element_text(size = 12),               # Legend text size
+    legend.title = element_text(size = 12)               # Legend title size
+  ) + 
+  labs(color = NULL, fill = NULL, linetype = NULL)
+
+  TTN_plot$table <- TTN_plot$table + 
+  theme(legend.position = "none")
+  
+summary(fit, times =60)
+
+combibed_TTN <-  grid.arrange(TTN_plot$plot, TTN_plot$table, ncol = 1, heights = c(2, 1))
+
+ggsave("TTN_plot.png", combibed_TTN, width = 9, height = 6)
+```
+
+```{r}
+clinical_info$Subtype <- clinical.data$SUBTYPE
+
+filtered_mutations <- mutation.data[mutation.data$Hugo_Symbol %in% top_50_mutations$Gene[2], ]
+
+colnames(filtered_mutations)[colnames(filtered_mutations) == "Patient_ID"] <- "PATIENT_ID" 
 
 # Merge the filtered mutations with the clinical data based on Patient_ID
 merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x = TRUE)
@@ -230,15 +308,7 @@ merged_data <- merge(filtered_mutations, clinical_info, by = "PATIENT_ID", all.x
 clinical_info$Top_gene <- ifelse(clinical_info$PATIENT_ID %in% 
                                 merged_data$PATIENT_ID, merged_data$Hugo_Symbol, "Other")
 
-
-Surv(clinical_info$OS_MONTHS, clinical_info$deceased) ~ Top_gene
-fit = survfit(Surv(OS_MONTHS, deceased) ~ Top_gene, data=clinical_info)
-
-ggsurvplot(fit, data=clinical_info, pval=T, risk.table=T, risk.table.col="strata", risk.table.height=0.35, title = "Survival Anlaysis of Top 5 Mutated Genes", xlab = "Time (Months)")
-```
-
-```{r}
-subgroup <- clinical_info[clinical_info$Top_gene == "TTN" & clinical_info$Subtype != ""
+subgroup <- clinical_info[clinical_info$Top_gene == "PIK3CA" & clinical_info$Subtype != ""
                           & !is.na(clinical_info$Subtype),]
 
 Surv(subgroup$OS_MONTHS, subgroup$deceased) ~ Top_gene + Subtype
